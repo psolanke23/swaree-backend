@@ -1,0 +1,205 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────
+//  Users
+// ──────────────────────────────────────────────
+enum UserRole {
+  CUSTOMER
+  OWNER
+  ADMIN
+}
+
+enum RestaurantStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  phone        String?
+  address      String?
+  role         UserRole @default(CUSTOMER)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  orders          Order[]
+  ownedRestaurant Restaurant?
+  cartDrafts      CartDraft[]
+
+  @@map("users")
+}
+
+// ──────────────────────────────────────────────
+//  Restaurants
+// ──────────────────────────────────────────────
+model Restaurant {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  imageUrl    String?  @map("image_url")
+  cuisines    String[]
+  rating      Float    @default(0)
+  totalRatings Int     @default(0) @map("total_ratings")
+  deliveryTime String  @map("delivery_time")
+  deliveryFee Float    @default(30) @map("delivery_fee")
+  minOrder    Float    @default(100) @map("min_order")
+  isOpen      Boolean          @default(true) @map("is_open")
+  isPopular   Boolean          @default(false) @map("is_popular")
+  status      RestaurantStatus @default(PENDING)
+  latitude    Float?
+  longitude   Float?
+  ownerId     String?  @unique @map("owner_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  owner       User?      @relation(fields: [ownerId], references: [id])
+  menuItems   MenuItem[]
+  orders      Order[]
+  cartDrafts  CartDraft[]
+
+  @@map("restaurants")
+}
+
+// ──────────────────────────────────────────────
+//  Menu Items
+// ──────────────────────────────────────────────
+model MenuItem {
+  id           String   @id @default(cuid())
+  restaurantId String   @map("restaurant_id")
+  name         String
+  description  String?
+  price        Float
+  imageUrl     String?  @map("image_url")
+  category     String
+  isVeg        Boolean  @default(true) @map("is_veg")
+  isAvailable  Boolean  @default(true) @map("is_available")
+  isPopular    Boolean  @default(false) @map("is_popular")
+  stock        Int?     // null = unlimited
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  restaurant  Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  orderItems  OrderItem[]
+
+  @@index([restaurantId])
+  @@map("menu_items")
+}
+
+// ──────────────────────────────────────────────
+//  Orders
+// ──────────────────────────────────────────────
+enum OrderStatus {
+  PENDING
+  ACCEPTED
+  PREPARING
+  READY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+model Order {
+  id              String        @id @default(cuid())
+  userId          String?       @map("user_id")          // null for guest orders
+  restaurantId    String        @map("restaurant_id")
+  status          OrderStatus   @default(PENDING)
+  paymentStatus   PaymentStatus @default(PENDING) @map("payment_status")
+  razorpayOrderId String?       @unique @map("razorpay_order_id")
+  razorpayPaymentId String?     @unique @map("razorpay_payment_id")
+  subtotal        Float
+  deliveryFee     Float         @map("delivery_fee")
+  taxes           Float
+  total           Float
+  deliveryAddress String        @map("delivery_address")
+  notes           String?
+  // Guest fields (populated when userId is null)
+  guestName       String?       @map("guest_name")
+  guestEmail      String?       @map("guest_email")
+  guestPhone      String?       @map("guest_phone")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  user         User?             @relation(fields: [userId], references: [id])
+  restaurant   Restaurant        @relation(fields: [restaurantId], references: [id])
+  items        OrderItem[]
+  tracking     DeliveryTracking?
+
+  @@index([userId])
+  @@index([guestEmail])
+  @@index([restaurantId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String @id @default(cuid())
+  orderId    String @map("order_id")
+  menuItemId String @map("menu_item_id")
+  quantity   Int
+  unitPrice  Float  @map("unit_price")
+  totalPrice Float  @map("total_price")
+
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+// ──────────────────────────────────────────────
+//  Delivery Tracking
+// ──────────────────────────────────────────────
+model DeliveryTracking {
+  id          String   @id @default(cuid())
+  orderId     String   @unique @map("order_id")
+  riderId     String?  @map("rider_id")
+  riderName   String?  @map("rider_name")
+  riderPhone  String?  @map("rider_phone")
+  latitude    Float?
+  longitude   Float?
+  estimatedAt DateTime? @map("estimated_at")
+  deliveredAt DateTime? @map("delivered_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("delivery_tracking")
+}
+
+// ──────────────────────────────────────────────
+//  Cart Drafts (saved cart per user+restaurant)
+// ──────────────────────────────────────────────
+model CartDraft {
+  id           String     @id @default(cuid())
+  userId       String     @map("user_id")
+  restaurantId String     @map("restaurant_id")
+  items        Json       // [{menuItemId: string, quantity: number}]
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, restaurantId])
+  @@map("cart_drafts")
+}
