@@ -11,11 +11,22 @@ import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
 import { TrackingService } from './tracking.service';
 
-const allowedWsOrigins = (): string[] =>
-  (process.env.FRONTEND_URLS ?? process.env.FRONTEND_URL ?? '')
+// Hardcoded production Firebase domains (must match main.ts CORS config)
+const HARDCODED_ORIGINS = [
+  'https://swaree-owner.web.app',
+  'https://swaree-admin.web.app',
+  'https://swaree.web.app',
+  'https://swaree-de3c5.web.app',
+  'https://swaree-de3c5.firebaseapp.com',
+];
+
+const allowedWsOrigins = (): string[] => [
+  ...HARDCODED_ORIGINS,
+  ...(process.env.FRONTEND_URLS ?? process.env.FRONTEND_URL ?? '')
     .split(',')
     .map(s => s.trim())
-    .filter(Boolean);
+    .filter(Boolean),
+];
 
 const corsOrigin = (
   origin: string | undefined,
@@ -24,6 +35,7 @@ const corsOrigin = (
   if (!origin) return callback(null, true);
   if (/^http:\/\/localhost(:\d+)?$/.test(origin)) return callback(null, true);
   if (allowedWsOrigins().includes(origin)) return callback(null, true);
+  console.warn(`[WS] CORS rejected origin: ${origin}`);
   callback(new Error(`CORS: origin ${origin} not allowed`));
 };
 

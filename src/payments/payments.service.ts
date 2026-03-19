@@ -21,10 +21,13 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
   ) {
-    this.razorpay = new Razorpay({
-      key_id: process.env.RAZORPAY_KEY_ID ?? '',
-      key_secret: process.env.RAZORPAY_KEY_SECRET ?? '',
-    });
+    const keyId = process.env.RAZORPAY_KEY_ID;
+    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+    if (keyId && keySecret) {
+      this.razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
+    } else {
+      this.logger.warn('RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET not set — payments disabled');
+    }
   }
 
   /**
