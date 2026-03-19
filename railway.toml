@@ -1,8 +1,7 @@
 [build]
-builder = "nixpacks"
-buildCommand = "npm install && DATABASE_URL=postgresql://dummy:dummy@localhost/dummy npx prisma generate && npm run build"
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "npx prisma migrate deploy && node dist/main"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
