@@ -6,6 +6,7 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Seeding Sawree database...');
 
+  /*
   // ── Restaurants ────────────────────────────────────────────────────────────
   const restaurants = await Promise.all([
     prisma.restaurant.upsert({
@@ -273,12 +274,13 @@ async function main() {
   }
 
   console.log(`✅ Seeded ${allMenuItems.length} menu items`);
+  */
 
   // ── Default Admin User ─────────────────────────────────────────────────────
-  const adminPasswordHash = await bcrypt.hash('admin123', 12);
+  const adminPasswordHash = await bcrypt.hash('admin@23', 12);
   await prisma.user.upsert({
     where: { email: 'admin@swaree.com' },
-    update: {},
+    update: { passwordHash: adminPasswordHash },
     create: {
       name: 'Admin',
       email: 'admin@swaree.com',
@@ -286,7 +288,7 @@ async function main() {
       role: 'ADMIN',
     },
   });
-  console.log('👑 Admin user seeded: admin@swaree.com / admin123');
+  console.log('👑 Admin user seeded: admin@swaree.com / admin@23');
 
   console.log('🎉 Done!');
 }

@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import * as nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import { OrderStatus } from '@prisma/client';
 
 const STATUS_LABEL: Record<OrderStatus, string> = {
@@ -35,38 +35,24 @@ const STATUS_MESSAGE: Record<OrderStatus, string> = {
 @Injectable()
 export class MailService implements OnModuleInit {
   private readonly logger = new Logger(MailService.name);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private readonly transporter: any;
+  private readonly resend: Resend | null;
+  private readonly fromEmail: string;
 
   constructor() {
-    // Uses SMTP env vars — set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS in .env
-    // For local testing use Mailtrap (https://mailtrap.io) or set SMTP_HOST=smtp.ethereal.email
-    this.transporter = nodemailer.createTransport({
-      host:   process.env.SMTP_HOST   ?? 'smtp.ethereal.email',
-      port:   parseInt(process.env.SMTP_PORT ?? '587', 10),
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: {
-        user: process.env.SMTP_USER ?? '',
-        pass: process.env.SMTP_PASS ?? '',
-      },
-    });
+    // Uses Resend API — set RESEND_API_KEY and EMAIL_FROM in .env
+    // Sign up at https://resend.com (free: 3,000 emails/month)
+    const apiKey = process.env.RESEND_API_KEY;
+    this.resend = apiKey ? new Resend(apiKey) : null;
+    this.fromEmail = process.env.EMAIL_FROM ?? 'Sawree <onboarding@resend.dev>';
   }
 
-  /** Called automatically by NestJS after DI — verifies SMTP connection */
+  /** Called automatically by NestJS after DI — verifies Resend configuration */
   async onModuleInit() {
-    const user = process.env.SMTP_USER;
-    if (!user) {
-      this.logger.warn('SMTP_USER not set — email sending is disabled');
+    if (!this.resend) {
+      this.logger.warn('RESEND_API_KEY not set — email sending is disabled');
       return;
     }
-    this.logger.log(`SMTP configured: ${process.env.SMTP_HOST}:${process.env.SMTP_PORT} as ${user}`);
-    try {
-      await this.transporter.verify();
-      this.logger.log('✅ SMTP connection verified — emails are ready to send');
-    } catch (err: any) {
-      this.logger.error(`❌ SMTP connection FAILED: ${err.message}`);
-      this.logger.error('Check SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS in your .env file');
-    }
+    this.logger.log(`✅ Resend configured — sending emails from: ${this.fromEmail}`);
   }
 
   /** Send an order confirmation email right after order is placed */
@@ -325,24 +311,23 @@ export class MailService implements OnModuleInit {
   }
 
   private async send(to: string, subject: string, html: string, text?: string): Promise<void> {
-    if (!process.env.SMTP_USER) {
+    if (!this.resend) {
       this.logger.warn(`Email not configured — skipping email to ${to}: "${subject}"`);
       return;
     }
     try {
-      await this.transporter.sendMail({
-        from:       process.env.SMTP_FROM ?? `"Sawree" <${process.env.SMTP_USER}>`,
+      const { error } = await this.resend.emails.send({
+        from: this.fromEmail,
         to,
         subject,
-        text:       text ?? html.replace(/<[^>]+>/g, ' ').replace(/\s{2,}/g, ' ').trim(),
+        text: text ?? html.replace(/<[^>]+>/g, ' ').replace(/\s{2,}/g, ' ').trim(),
         html,
-        headers: {
-          'X-Priority':        '3',
-          'X-Mailer':          'Sawree Mailer',
-          'X-Entity-Ref-ID':   `${Date.now()}`,
-        },
       });
-      this.logger.log(`Email sent to ${to}: ${subject}`);
+      if (error) {
+        this.logger.error(`Failed to send email to ${to}: ${error.message}`);
+      } else {
+        this.logger.log(`Email sent to ${to}: ${subject}`);
+      }
     } catch (err) {
       // Never crash the request because email failed
       this.logger.error(`Failed to send email to ${to}: ${err}`);
